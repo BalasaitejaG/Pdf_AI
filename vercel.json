@@ -2,7 +2,13 @@
     "builds": [
         {
             "src": "app.py",
-            "use": "@streamlit/vercel-plugin"
+            "use": "@vercel/python"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "app.py"
         }
     ]
 }
