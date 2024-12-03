@@ -117,6 +117,23 @@ def extract_text_from_pdf(pdf_file):
     return text
 
 
+def format_response(answer):
+    """Format the AI response with better styling"""
+    return f"""
+        <div class="response">
+            <div class="response-header">
+                <svg class="ai-icon" viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,8A4,4 0 0,0 8,12A4,4 0 0,0 12,16A4,4 0 0,0 16,12A4,4 0 0,0 12,8Z"/>
+                </svg>
+                <span>AI Assistant</span>
+            </div>
+            <div class="response-content">
+                {answer}
+            </div>
+        </div>
+    """
+
+
 def main():
     # Update the styling section
     st.markdown("""
@@ -178,15 +195,52 @@ def main():
 
             /* Response area */
             .response {
-                background: rgba(33, 150, 243, 0.05);  /* Very subtle blue background */
-                padding: 25px;
+                background: rgba(33, 150, 243, 0.05);
                 border-radius: 12px;
-                border: 1px solid rgba(33, 150, 243, 0.2);  /* Subtle border */
+                border: 1px solid rgba(33, 150, 243, 0.2);
                 margin-top: 1.5rem;
-                color: #F5F5F5;  /* Brighter off-white */
+                overflow: hidden;
+            }
+
+            .response-header {
+                background: rgba(33, 150, 243, 0.1);
+                padding: 12px 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                border-bottom: 1px solid rgba(33, 150, 243, 0.2);
+            }
+
+            .response-header .ai-icon {
+                color: #2196F3;
+            }
+
+            .response-header span {
+                color: #F5F5F5;
+                font-weight: 500;
+            }
+
+            .response-content {
+                padding: 25px;
+                color: #F5F5F5;
                 font-size: 1.05rem;
                 line-height: 1.7;
-                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);  /* Subtle shadow */
+            }
+
+            /* Highlight important parts */
+            .response-content strong {
+                color: #2196F3;
+                font-weight: 500;
+            }
+
+            /* Style lists in response */
+            .response-content ul, .response-content ol {
+                margin: 1rem 0;
+                padding-left: 1.5rem;
+            }
+
+            .response-content li {
+                margin: 0.5rem 0;
             }
 
             /* Style for the question input */
@@ -269,7 +323,7 @@ def main():
                         Answer:"""
 
                         answer = get_ai_response(prompt)
-                        st.markdown(f'<div class="response">{answer}</div>', unsafe_allow_html=True)
+                        st.markdown(format_response(answer), unsafe_allow_html=True)
                     except Exception as e:
                         st.error("Error: Please try again later")
 
