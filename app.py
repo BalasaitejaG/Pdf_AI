@@ -5,26 +5,34 @@ from dotenv import load_dotenv
 import os
 import PyPDF2
 import streamlit as st
+import atexit
+
 # Must be the first Streamlit command
 st.set_page_config(page_title="PDF Question & Answer", layout="wide")
 
-
-# Load environment variables - works for both local and Vercel
+# Load environment variables
 load_dotenv()
 
-# Get API key from environment variable
+# Initialize genai with cleanup
+def cleanup_genai():
+    try:
+        genai.reset_session()
+    except:
+        pass
+
+# Register cleanup function
+atexit.register(cleanup_genai)
+
+# Get API key and configure Gemini
 api_key = os.getenv('GOOGLE_API_KEY')
 if not api_key:
-    st.error(
-        "❌ API key not found. Please set the GOOGLE_API_KEY environment variable.")
+    st.error("❌ API key not found. Please set the GOOGLE_API_KEY environment variable.")
     st.stop()
 
-# Configure Gemini AI
 try:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-pro')
 except Exception as e:
-    st.sidebar.error("❌ API Key error. Please check your API key")
     st.error(f"Error: {str(e)}")
     st.stop()
 
@@ -170,11 +178,33 @@ def main():
 
             /* Response area */
             .response {
-                background: var(--light-gray);
-                padding: 20px;
+                background: rgba(33, 150, 243, 0.05);  /* Very subtle blue background */
+                padding: 25px;
+                border-radius: 12px;
+                border: 1px solid rgba(33, 150, 243, 0.2);  /* Subtle border */
+                margin-top: 1.5rem;
+                color: #F5F5F5;  /* Brighter off-white */
+                font-size: 1.05rem;
+                line-height: 1.7;
+                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);  /* Subtle shadow */
+            }
+
+            /* Style for the question input */
+            .stTextInput input {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: white;
                 border-radius: 8px;
-                border-left: 4px solid var(--primary);
-                margin-top: 1rem;
+                padding: 12px 16px;
+            }
+
+            .stTextInput input:focus {
+                border-color: var(--primary);
+                box-shadow: 0 0 0 1px var(--primary);
+            }
+
+            .stTextInput input::placeholder {
+                color: rgba(255, 255, 255, 0.5);
             }
         </style>
     """, unsafe_allow_html=True)
@@ -192,8 +222,10 @@ def main():
     
     # Upload area
     st.markdown('<div class="upload-container">', unsafe_allow_html=True)
-    pdf_file = st.file_uploader("", 
+    pdf_file = st.file_uploader(
+        label="Upload PDF Document",  # Added proper label
         type="pdf", 
+        label_visibility="collapsed",  # Hide label but keep it accessible
         help="Drag and drop a PDF file or click to browse"
     )
     st.markdown('</div>', unsafe_allow_html=True)
