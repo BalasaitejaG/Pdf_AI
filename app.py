@@ -27,28 +27,75 @@ except Exception as e:
     st.error(f"Error: {str(e)}")
     st.stop()
 
+# Cache for storing AI responses
+if 'response_cache' not in st.session_state:
+    st.session_state.response_cache = {}
+
+# Request tracking
+if 'request_timestamps' not in st.session_state:
+    st.session_state.request_timestamps = []
+
+def clean_old_timestamps():
+    """Remove timestamps older than 1 hour"""
+    current_time = time.time()
+    st.session_state.request_timestamps = [
+        ts for ts in st.session_state.request_timestamps 
+        if current_time - ts < 3600
+    ]
+
+def can_make_request():
+    """Check if we can make a new request based on rate limits"""
+    clean_old_timestamps()
+    # Limit to 60 requests per hour
+    return len(st.session_state.request_timestamps) < 60
+
+def get_cache_key(prompt):
+    """Generate a cache key for a prompt"""
+    return hash(prompt)
+
+def get_ai_response(prompt, max_retries=3):
+    cache_key = get_cache_key(prompt)
+    
+    # Check cache first
+    if cache_key in st.session_state.response_cache:
+        return st.session_state.response_cache[cache_key]
+    
+    # Check rate limits
+    if not can_make_request():
+        wait_time = 3600 - (time.time() - st.session_state.request_timestamps[0])
+        raise Exception(f"Rate limit reached. Please wait {int(wait_time/60)} minutes before trying again.")
+
+    for attempt in range(max_retries):
+        try:
+            # Add timestamp for rate limiting
+            st.session_state.request_timestamps.append(time.time())
+            
+            response = model.generate_content(prompt)
+            result = response.text
+            
+            # Cache the response
+            st.session_state.response_cache[cache_key] = result
+            return result
+            
+        except Exception as e:
+            error_message = str(e).lower()
+            if "resource_exhausted" in error_message:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    st.warning(f"Rate limit hit. Retrying in {wait_time} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)  # Exponential backoff
+                    continue
+                else:
+                    st.error("⚠️ Rate limit exceeded. Please try again in a few minutes.")
+                    raise Exception("Maximum retry attempts reached. Please wait a few minutes before trying again.")
+            raise e
+
 def extract_text_from_pdf(pdf_file):
     pdf_reader = PyPDF2.PdfReader(pdf_file)
     text = ""
     for page in pdf_reader.pages:
         text += page.extract_text() + "\n"
     return text
-
-def get_ai_response(prompt, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            error_message = str(e).lower()
-            if "resource_exhausted" in error_message:
-                if attempt < max_retries - 1:
-                    st.warning(f"Rate limit hit. Retrying in {2 ** attempt} seconds...")
-                    time.sleep(2 ** attempt)  # Exponential backoff
-                    continue
-                else:
-                    raise Exception("Rate limit exceeded. Please try again later.")
-            raise e
 
 def main():
     st.title("📚 PDF Question & Answer")
