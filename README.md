@@ -1,38 +1,42 @@
-# PDF Question Answering System
+# PDF Question & Answer Assistant
 
-This application allows users to upload PDF documents and ask questions about their content. The system uses Google's Gemini AI to understand and answer questions based on the PDF content.
+An intelligent PDF document analysis tool that allows you to ask questions about your PDF documents and get AI-powered answers.
 
 ## Features
-- PDF document upload
-- Text extraction from PDFs
-- Interactive question-answering interface using Gemini AI
-- User-friendly web interface using Streamlit
+
+- PDF Document Upload
+- Natural Language Question Answering
+- AI-Powered Analysis
+- Smart Content Search
 
 ## Setup
-1. Install the required dependencies:
+
+1. Clone the repository
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Get your Google API key:
-   - Go to https://makersuite.google.com/app/apikey
-   - Create a new API key (it's free!)
-
-3. Create a `.env` file and add your Google API key:
+3. Configure environment:
+   - Create a `.env` file in the project root
+   - Add your API key in the following format:
 ```
-GOOGLE_API_KEY=your_google_api_key_here
+GOOGLE_API_KEY=your_api_key
 ```
 
-4. Run the application:
+## Usage
+
+1. Start the application:
 ```bash
 streamlit run app.py
 ```
 
-## Usage
-1. Upload a PDF document using the file uploader
-2. Wait for the document to be processed
-3. Type your question in the text input
-4. Get instant answers based on the PDF content using Gemini AI
+2. Open the provided URL in your browser
+3. Upload a PDF document
+4. Ask questions about the document content
 
-## Note
-The application uses Google's Gemini AI which offers free API access with generous limits.
+## Requirements
+
+- Python 3.9+
+- Required packages listed in `requirements.txt`
+- Valid API key for the AI service
