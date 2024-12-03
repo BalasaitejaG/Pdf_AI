@@ -1,9 +1,13 @@
 import streamlit as st
+# Must be the first Streamlit command
+st.set_page_config(page_title="PDF Question & Answer", layout="wide")
+
 import PyPDF2
 import os
 from dotenv import load_dotenv
 import google.generativeai as genai
 import tempfile
+import time
 
 # Load environment variables
 load_dotenv()
@@ -12,8 +16,11 @@ load_dotenv()
 try:
     genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
     model = genai.GenerativeModel('gemini-pro')
+    # Test the API key with a simple query
+    test_response = model.generate_content("Test")
+    st.sidebar.success("✅ API Key is valid and working")
 except Exception as e:
-    st.error(f"Error initializing Gemini AI: {str(e)}")
+    st.sidebar.error("❌ API Key error. Please check your API key")
     model = None
 
 def extract_text_from_pdf(pdf_file):
@@ -23,9 +30,20 @@ def extract_text_from_pdf(pdf_file):
         text += page.extract_text() + "\n"
     return text
 
+def get_ai_response(prompt, retries=3, delay=1):
+    for attempt in range(retries):
+        try:
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            if "resource_exhausted" in str(e).lower():
+                if attempt < retries - 1:
+                    time.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                    continue
+            raise e
+
 def main():
-    st.set_page_config(page_title="PDF Question & Answer", layout="wide")
-    
     st.title("📚 PDF Question & Answer")
     st.write("Upload a PDF and ask questions about its content!")
 
@@ -73,13 +91,16 @@ Question: {query}
 
 Answer:"""
                     
-                    response = model.generate_content(prompt)
+                    answer = get_ai_response(prompt)
                     st.write("### Answer:")
-                    st.write(response.text)
+                    st.write(answer)
                     
                 except Exception as e:
-                    st.error(f"Error getting response from Gemini AI: {str(e)}")
-                    st.info("Please check your API key or try again later.")
+                    if "resource_exhausted" in str(e).lower():
+                        st.error("Rate limit reached. Please try again in a few minutes.")
+                    else:
+                        st.error(f"Error: {str(e)}")
+                    st.info("If this error persists, please check your API key or try again later.")
 
 if __name__ == "__main__":
     main()
