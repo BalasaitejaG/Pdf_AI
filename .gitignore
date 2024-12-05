@@ -20,11 +20,13 @@ var/
 .installed.cfg
 *.egg
 
-# Environment
+# Environment files
 .env
 .venv
 venv/
 ENV/
+.env.*
+!.env.example
 
 # IDE
 .idea/
@@ -38,3 +40,4 @@ Thumbs.db
 
 # Streamlit
 .streamlit/secrets.toml
+.streamlit/config.toml.temp
