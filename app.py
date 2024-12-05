@@ -9,6 +9,8 @@ import atexit
 from datetime import datetime
 import json
 from urllib.parse import quote, unquote
+from streamlit.components.v1 import components
+import extra_streamlit_components as stx
 
 # Must be the first Streamlit command
 st.set_page_config(page_title="PDF Question & Answer", layout="wide")
@@ -57,13 +59,37 @@ if 'response_cache' not in st.session_state:
 if 'user_api_key' not in st.session_state:
     st.session_state.user_api_key = None
 
-# Update the trial count initialization section
+# Add this function to handle local storage
+def init_local_storage():
+    """Initialize local storage component"""
+    components.html(
+        """
+        <script>
+            if (!window.localStorage.getItem('pdf_ai_trial_count')) {
+                window.localStorage.setItem('pdf_ai_trial_count', '0');
+            }
+            window.parent.addEventListener('message', function(e) {
+                if (e.data.type === 'get_trial_count') {
+                    window.parent.postMessage({
+                        type: 'trial_count',
+                        count: window.localStorage.getItem('pdf_ai_trial_count')
+                    }, '*');
+                } else if (e.data.type === 'increment_trial_count') {
+                    let count = parseInt(window.localStorage.getItem('pdf_ai_trial_count')) || 0;
+                    count = Math.min(5, count + 1);
+                    window.localStorage.setItem('pdf_ai_trial_count', count.toString());
+                }
+            });
+        </script>
+        """,
+        height=0,
+    )
+
+# Update the trial count initialization
 if 'trial_count' not in st.session_state:
-    try:
-        # Get trial count from browser's local storage via a component
-        st.session_state.trial_count = 0  # Start fresh for new sessions
-    except:
-        st.session_state.trial_count = 0
+    cookie_manager = get_cookie_manager()
+    saved_count = cookie_manager.get('trial_count')
+    st.session_state.trial_count = int(saved_count) if saved_count else 0
 
 def get_cache_key(prompt):
     """Generate a cache key for a prompt"""
@@ -78,9 +104,9 @@ def check_trial_usage():
 def increment_trial_usage():
     """Increment the trial usage count"""
     if not st.session_state.user_api_key:  # Only track if using trial
-        st.session_state.trial_count += 1
-        # Remove URL parameter storage since we want device-specific tracking
-        st.session_state.trial_count = min(5, st.session_state.trial_count)  # Cap at 5
+        cookie_manager = get_cookie_manager()
+        st.session_state.trial_count = min(5, st.session_state.trial_count + 1)
+        cookie_manager.set('trial_count', str(st.session_state.trial_count))
 
 def get_remaining_trial_requests():
     """Get remaining trial requests"""
@@ -162,6 +188,9 @@ def extract_text_from_pdf(pdf_file):
     for page in pdf_reader.pages:
         text += page.extract_text() + "\n"
     return text
+
+def get_cookie_manager():
+    return stx.CookieManager()
 
 def main():
     # Update the styling section
@@ -295,7 +324,7 @@ def main():
         
         # Show current trial count
         remaining_requests = get_remaining_trial_requests()
-        if remaining_requests > 0:
+        if api_key and remaining_requests > 0:  # Only show if default API key is available
             st.markdown(f"🎁 Trial requests remaining: **{remaining_requests}**")
         
         if user_api_key:
@@ -386,6 +415,18 @@ def main():
                 st.error(str(e))
                 if "rate limit" in str(e).lower():
                     st.info("💡 Tip: Use your own API key in the sidebar to avoid rate limits!")
+
+    # Get trial count from local storage at start
+    components.html(
+        """
+        <script>
+            window.parent.postMessage({
+                type: 'get_trial_count'
+            }, '*');
+        </script>
+        """,
+        height=0,
+    )
 
 if __name__ == "__main__":
     main()
