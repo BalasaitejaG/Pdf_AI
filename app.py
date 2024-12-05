@@ -8,6 +8,7 @@ import streamlit as st
 import atexit
 from datetime import datetime
 import json
+from urllib.parse import quote, unquote
 
 # Must be the first Streamlit command
 st.set_page_config(page_title="PDF Question & Answer", layout="wide")
@@ -45,8 +46,15 @@ if 'response_cache' not in st.session_state:
 if 'user_api_key' not in st.session_state:
     st.session_state.user_api_key = None
 
+# Change trial count initialization to use URL parameters for persistence
 if 'trial_count' not in st.session_state:
-    st.session_state.trial_count = 0
+    try:
+        # Try to get trial count from URL parameters
+        params = st.experimental_get_query_params()
+        trial_count = int(params.get('trial_count', [0])[0])
+        st.session_state.trial_count = trial_count
+    except:
+        st.session_state.trial_count = 0
 
 def get_cache_key(prompt):
     """Generate a cache key for a prompt"""
@@ -59,9 +67,13 @@ def check_trial_usage():
     return st.session_state.trial_count < 5
 
 def increment_trial_usage():
-    """Increment the trial usage count"""
+    """Increment the trial usage count and persist it"""
     if not st.session_state.user_api_key:  # Only track if using trial
         st.session_state.trial_count += 1
+        # Store in URL parameters
+        params = st.experimental_get_query_params()
+        params['trial_count'] = str(st.session_state.trial_count)
+        st.experimental_set_query_params(**params)
 
 def get_remaining_trial_requests():
     """Get remaining trial requests"""
@@ -69,8 +81,22 @@ def get_remaining_trial_requests():
         return 0
     return max(0, 5 - st.session_state.trial_count)
 
+def is_rate_limited():
+    """Check if the user is rate limited"""
+    current_time = time.time()
+    last_request_time = st.session_state.get('last_request_time', 0)
+    
+    if current_time - last_request_time < 2:  # 2 seconds minimum between requests
+        return True
+    
+    st.session_state.last_request_time = current_time
+    return False
+
 def get_ai_response(prompt, max_retries=3):
     """Get AI response with better error handling"""
+    if is_rate_limited():
+        raise Exception("Please wait a moment before making another request.")
+    
     cache_key = get_cache_key(prompt)
 
     # Check cache first
@@ -81,9 +107,13 @@ def get_ai_response(prompt, max_retries=3):
     if not st.session_state.user_api_key and not check_trial_usage():
         raise Exception("Trial limit reached (5 requests). Please enter your own API key to continue using the application.")
 
+    # Validate API key before making the request
+    current_api_key = st.session_state.user_api_key or api_key
+    if not current_api_key:
+        raise Exception("No valid API key found. Please enter your API key to continue.")
+
     try:
         # Configure API key
-        current_api_key = st.session_state.user_api_key or api_key
         genai.configure(api_key=current_api_key)
         
         # Make the API call
@@ -100,7 +130,11 @@ def get_ai_response(prompt, max_retries=3):
 
     except Exception as e:
         error_msg = str(e).lower()
-        if "resource_exhausted" in error_msg or "rate limit" in error_msg:
+        if "invalid" in error_msg and "api key" in error_msg:
+            # Clear the invalid API key
+            st.session_state.user_api_key = None
+            raise Exception("⚠️ Invalid API key. Please enter a valid API key in the sidebar.")
+        elif "resource_exhausted" in error_msg or "rate limit" in error_msg:
             wait_time = "a few minutes"
             if "about an hour" in error_msg:
                 wait_time = "about an hour"
@@ -247,15 +281,25 @@ def main():
     with st.sidebar:
         st.markdown("### API Key Settings")
         user_api_key = st.text_input("Enter your API key (optional)", type="password")
+        
+        # Show current trial count
+        remaining_requests = get_remaining_trial_requests()
+        st.markdown(f"Trial requests remaining: **{remaining_requests}**")
+        
         if user_api_key:
-            st.session_state.user_api_key = user_api_key
-            
-        # Show trial usage if using default API key
+            try:
+                genai.configure(api_key=user_api_key)
+                model.generate_content("test")
+                st.session_state.user_api_key = user_api_key
+                st.success("API key validated successfully ✓")
+            except Exception as e:
+                st.error("❌ Invalid API key. Please check and try again.")
+                st.session_state.user_api_key = None
+        
+        # Show trial usage warning
         if not st.session_state.user_api_key:
-            remaining_requests = get_remaining_trial_requests()
-            st.markdown(f"Trial requests remaining: **{remaining_requests}**")
             st.markdown("*You can make 5 requests with our API key. After that, please use your own API key.*")
-            if remaining_requests == 0:
+            if remaining_requests <= 0:
                 st.error("⚠️ Trial limit reached. Please enter your API key above to continue.")
                 st.markdown("""
                 To get your own API key:
