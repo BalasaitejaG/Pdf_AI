@@ -6,12 +6,34 @@ import os
 import PyPDF2
 import streamlit as st
 import atexit
+import sqlite3
+from datetime import datetime
+from pathlib import Path
 
 # Must be the first Streamlit command
 st.set_page_config(page_title="PDF Question & Answer", layout="wide")
 
 # Load environment variables
 load_dotenv()
+
+# Database setup
+DATA_DIR = Path("/Users/balasaiteja/Documents/Developer/Projects/Pdf_AI/data")
+DB_PATH = DATA_DIR / "usage.db"
+
+def init_database():
+    """Initialize the SQLite database"""
+    DATA_DIR.mkdir(exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS user_usage
+                 (user_id TEXT PRIMARY KEY,
+                  request_count INTEGER DEFAULT 0,
+                  first_request TIMESTAMP)''')
+    conn.commit()
+    conn.close()
+
+# Initialize database on startup
+init_database()
 
 # Initialize genai with cleanup
 def cleanup_genai():
@@ -44,27 +66,75 @@ if 'response_cache' not in st.session_state:
 if 'request_timestamps' not in st.session_state:
     st.session_state.request_timestamps = []
 
+# User's API key
+if 'user_api_key' not in st.session_state:
+    st.session_state.user_api_key = None
 
-def clean_old_timestamps():
-    """Remove timestamps older than 1 hour"""
-    current_time = time.time()
-    st.session_state.request_timestamps = [
-        ts for ts in st.session_state.request_timestamps
-        if current_time - ts < 3600
-    ]
+def get_user_identifier():
+    """Get a unique identifier for the user"""
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = str(int(time.time() * 1000))  # Use timestamp as ID
+    return st.session_state.user_id
 
+def check_trial_usage():
+    """Check if user has exceeded trial usage"""
+    if st.session_state.user_api_key:  # If user has their own API key, no need to check trial
+        return True
+        
+    user_id = get_user_identifier()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    c.execute("SELECT request_count FROM user_usage WHERE user_id = ?", (user_id,))
+    result = c.fetchone()
+    
+    if result is None:
+        c.execute("INSERT INTO user_usage (user_id, request_count, first_request) VALUES (?, 0, ?)",
+                 (user_id, datetime.now()))
+        conn.commit()
+        result = (0,)
+    
+    conn.close()
+    return result[0] < 5
 
-def can_make_request():
-    """Check if we can make a new request based on rate limits"""
-    clean_old_timestamps()
-    # Limit to 60 requests per hour
-    return len(st.session_state.request_timestamps) < 60
+def increment_trial_usage():
+    """Increment the trial usage count for the current user"""
+    if not st.session_state.user_api_key:  # Only track if using trial
+        user_id = get_user_identifier()
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        c.execute("""INSERT INTO user_usage (user_id, request_count, first_request)
+                     VALUES (?, 1, ?)
+                     ON CONFLICT(user_id) DO UPDATE SET
+                     request_count = request_count + 1""",
+                 (user_id, datetime.now()))
+        
+        conn.commit()
+        conn.close()
 
+def get_remaining_trial_requests():
+    """Get remaining trial requests for current user"""
+    if st.session_state.user_api_key:
+        return 0
+        
+    user_id = get_user_identifier()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    c.execute("SELECT request_count FROM user_usage WHERE user_id = ?", (user_id,))
+    result = c.fetchone()
+    
+    conn.close()
+    
+    if result is None:
+        return 5
+    
+    return max(0, 5 - result[0])
 
 def get_cache_key(prompt):
     """Generate a cache key for a prompt"""
     return hash(prompt)
-
 
 def get_ai_response(prompt, max_retries=3):
     cache_key = get_cache_key(prompt)
@@ -73,41 +143,32 @@ def get_ai_response(prompt, max_retries=3):
     if cache_key in st.session_state.response_cache:
         return st.session_state.response_cache[cache_key]
 
-    # Check rate limits
-    if not can_make_request():
-        wait_time = 3600 - \
-            (time.time() - st.session_state.request_timestamps[0])
-        raise Exception(f"Rate limit reached. Please wait {
-                        int(wait_time/60)} minutes before trying again.")
+    # Check trial usage if using default API key
+    if not st.session_state.user_api_key and not check_trial_usage():
+        raise Exception("Trial limit reached (5 requests). Please enter your own API key to continue using the application.")
 
-    for attempt in range(max_retries):
-        try:
-            # Add timestamp for rate limiting
-            st.session_state.request_timestamps.append(time.time())
+    try:
+        # Configure API key
+        current_api_key = st.session_state.user_api_key or api_key
+        genai.configure(api_key=current_api_key)
+        
+        # Make the API call
+        response = model.generate_content(prompt)
+        result = response.text
 
-            response = model.generate_content(prompt)
-            result = response.text
+        # Increment trial count if using default API key
+        if not st.session_state.user_api_key:
+            increment_trial_usage()
 
-            # Cache the response
-            st.session_state.response_cache[cache_key] = result
-            return result
+        # Cache the response
+        st.session_state.response_cache[cache_key] = result
+        return result
 
-        except Exception as e:
-            error_message = str(e).lower()
-            if "resource_exhausted" in error_message:
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
-                    st.warning(f"Rate limit hit. Retrying in {
-                               wait_time} seconds... (Attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)  # Exponential backoff
-                    continue
-                else:
-                    st.error(
-                        "⚠️ Rate limit exceeded. Please try again in a few minutes.")
-                    raise Exception(
-                        "Maximum retry attempts reached. Please wait a few minutes before trying again.")
-            raise e
-
+    except Exception as e:
+        if "resource_exhausted" in str(e).lower():
+            st.error("⚠️ API rate limit reached. Please try again in a few minutes.")
+            raise Exception("Please wait a few minutes before trying again.")
+        raise e
 
 def extract_text_from_pdf(pdf_file):
     pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -115,24 +176,6 @@ def extract_text_from_pdf(pdf_file):
     for page in pdf_reader.pages:
         text += page.extract_text() + "\n"
     return text
-
-
-def format_response(answer):
-    """Format the AI response with better styling"""
-    return f"""
-        <div class="response">
-            <div class="response-header">
-                <svg class="ai-icon" viewBox="0 0 24 24" width="24" height="24">
-                    <path fill="currentColor" d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,8A4,4 0 0,0 8,12A4,4 0 0,0 12,16A4,4 0 0,0 16,12A4,4 0 0,0 12,8Z"/>
-                </svg>
-                <span>AI Assistant</span>
-            </div>
-            <div class="response-content">
-                {answer}
-            </div>
-        </div>
-    """
-
 
 def main():
     # Update the styling section
@@ -277,9 +320,9 @@ def main():
     # Upload area
     st.markdown('<div class="upload-container">', unsafe_allow_html=True)
     pdf_file = st.file_uploader(
-        label="Upload PDF Document",  # Added proper label
+        label="Upload PDF Document",  
         type="pdf", 
-        label_visibility="collapsed",  # Hide label but keep it accessible
+        label_visibility="collapsed",  
         help="Drag and drop a PDF file or click to browse"
     )
     st.markdown('</div>', unsafe_allow_html=True)
@@ -289,6 +332,34 @@ def main():
         st.session_state.pdf_text = None
     if 'pdf_name' not in st.session_state:
         st.session_state.pdf_name = None
+
+    # Add API key input field in sidebar
+    with st.sidebar:
+        st.markdown("### API Key Settings")
+        user_api_key = st.text_input("Enter your API key (optional)", type="password")
+        if user_api_key:
+            st.session_state.user_api_key = user_api_key
+            
+        # Show trial usage if using default API key
+        if not st.session_state.user_api_key:
+            remaining_requests = get_remaining_trial_requests()
+            st.markdown(f"Trial requests remaining: **{remaining_requests}**")
+            st.markdown("*You can make 5 requests with our API key. After that, please use your own API key.*")
+            
+            # Show user ID for debugging (you can remove this later)
+            st.markdown("---")
+            st.markdown(f"Your User ID: `{get_user_identifier()}`")
+            
+            if remaining_requests == 0:
+                st.error("⚠️ Trial limit reached. Please enter your API key above to continue.")
+                st.markdown("""
+                To get your own API key:
+                1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
+                2. Create a new API key
+                3. Enter it above to continue using the application
+                """)
+        else:
+            st.success("Using your API key ✓")
 
     if pdf_file is not None:
         if st.session_state.pdf_name != pdf_file.name:
@@ -323,7 +394,7 @@ def main():
                         Answer:"""
 
                         answer = get_ai_response(prompt)
-                        st.markdown(format_response(answer), unsafe_allow_html=True)
+                        st.markdown(f"<div class='response'><div class='response-content'>{answer}</div></div>", unsafe_allow_html=True)
                     except Exception as e:
                         st.error("Error: Please try again later")
 

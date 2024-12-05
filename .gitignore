@@ -34,3 +34,7 @@ wheels/
 *.swp
 *.swo
 .DS_Store
+
+# Data
+data/
+usage_data.json
