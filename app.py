@@ -57,13 +57,11 @@ if 'response_cache' not in st.session_state:
 if 'user_api_key' not in st.session_state:
     st.session_state.user_api_key = None
 
-# Change trial count initialization to use URL parameters for persistence
+# Update the trial count initialization section
 if 'trial_count' not in st.session_state:
     try:
-        # Try to get trial count from URL parameters
-        params = st.experimental_get_query_params()
-        trial_count = int(params.get('trial_count', [0])[0])
-        st.session_state.trial_count = trial_count
+        # Get trial count from browser's local storage via a component
+        st.session_state.trial_count = 0  # Start fresh for new sessions
     except:
         st.session_state.trial_count = 0
 
@@ -78,13 +76,11 @@ def check_trial_usage():
     return st.session_state.trial_count < 5
 
 def increment_trial_usage():
-    """Increment the trial usage count and persist it"""
+    """Increment the trial usage count"""
     if not st.session_state.user_api_key:  # Only track if using trial
         st.session_state.trial_count += 1
-        # Store in URL parameters
-        params = st.experimental_get_query_params()
-        params['trial_count'] = str(st.session_state.trial_count)
-        st.experimental_set_query_params(**params)
+        # Remove URL parameter storage since we want device-specific tracking
+        st.session_state.trial_count = min(5, st.session_state.trial_count)  # Cap at 5
 
 def get_remaining_trial_requests():
     """Get remaining trial requests"""
