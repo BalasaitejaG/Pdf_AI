@@ -18,18 +18,24 @@ load_dotenv()
 
 # Database setup
 DATA_DIR = Path(__file__).parent / "data"  # Use relative path
-DB_PATH = DATA_DIR / "usage.db"
+DB_PATH = None  # Initialize as None first
 
 def init_database():
     """Initialize the SQLite database"""
+    global DB_PATH  # Declare global at start of function
+    
     try:
         # Create data directory if it doesn't exist
         DATA_DIR.mkdir(exist_ok=True)
         
-        # Use memory database if we can't write to disk
-        db_path = ":memory:" if not os.access(DATA_DIR, os.W_OK) else DB_PATH
+        # Set DB_PATH based on permissions
+        if os.access(DATA_DIR, os.W_OK):
+            DB_PATH = DATA_DIR / "usage.db"
+        else:
+            DB_PATH = ":memory:"
+            st.warning("⚠️ Running in demo mode - trial usage won't persist between sessions")
         
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS user_usage
                     (user_id TEXT PRIMARY KEY,
@@ -38,9 +44,8 @@ def init_database():
         conn.commit()
         conn.close()
     except Exception as e:
+        DB_PATH = ":memory:"
         st.warning("⚠️ Running in demo mode - trial usage won't persist between sessions")
-        global DB_PATH
-        DB_PATH = ":memory:"  # Fall back to in-memory database
 
 # Initialize database on startup
 init_database()
