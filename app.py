@@ -33,11 +33,13 @@ if not api_key:
     st.stop()
 
 try:
+    # Test the default API key
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro')
+    test_model = genai.GenerativeModel('gemini-pro')
+    test_model.generate_content("test")  # Quick test to verify API key
 except Exception as e:
-    st.error(f"Error: {str(e)}")
-    st.stop()
+    st.error(f"❌ Default API key is invalid: {str(e)}")
+    api_key = None  # Invalidate the default API key
 
 # Initialize session state
 if 'response_cache' not in st.session_state:
@@ -107,17 +109,18 @@ def get_ai_response(prompt, max_retries=3):
     if not st.session_state.user_api_key and not check_trial_usage():
         raise Exception("Trial limit reached (5 requests). Please enter your own API key to continue using the application.")
 
-    # Validate API key before making the request
+    # Use the correct API key
     current_api_key = st.session_state.user_api_key or api_key
     if not current_api_key:
         raise Exception("No valid API key found. Please enter your API key to continue.")
 
     try:
-        # Configure API key
+        # Configure API key and create a new model instance for this request
         genai.configure(api_key=current_api_key)
+        request_model = genai.GenerativeModel('gemini-pro')
         
         # Make the API call
-        response = model.generate_content(prompt)
+        response = request_model.generate_content(prompt)
         result = response.text
 
         # Increment trial count if using default API key
@@ -131,9 +134,11 @@ def get_ai_response(prompt, max_retries=3):
     except Exception as e:
         error_msg = str(e).lower()
         if "invalid" in error_msg and "api key" in error_msg:
-            # Clear the invalid API key
-            st.session_state.user_api_key = None
-            raise Exception("⚠️ Invalid API key. Please enter a valid API key in the sidebar.")
+            if current_api_key == api_key:  # If using default API key
+                raise Exception("⚠️ Default API key is invalid. Please enter your own API key in the sidebar.")
+            else:  # If using user's API key
+                st.session_state.user_api_key = None
+                raise Exception("⚠️ Invalid API key. Please enter a valid API key in the sidebar.")
         elif "resource_exhausted" in error_msg or "rate limit" in error_msg:
             wait_time = "a few minutes"
             if "about an hour" in error_msg:
@@ -142,7 +147,7 @@ def get_ai_response(prompt, max_retries=3):
         elif "invalid_argument" in error_msg:
             raise Exception("⚠️ The request was invalid. Please try with a shorter text or different question.")
         elif "permission_denied" in error_msg:
-            raise Exception("⚠️ Invalid API key. Please check your API key and try again.")
+            raise Exception("⚠️ Permission denied. Please check your API key and try again.")
         else:
             raise Exception(f"⚠️ An error occurred: {str(e)}")
 
