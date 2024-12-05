@@ -16,6 +16,27 @@ st.set_page_config(page_title="PDF Question & Answer", layout="wide")
 # Load environment variables
 load_dotenv()
 
+# Get API key and configure Gemini
+def validate_api_key(api_key_to_test):
+    """Validate API key without making an actual API call"""
+    if not api_key_to_test or len(api_key_to_test.strip()) < 10:  # Basic validation
+        return False
+    return True
+
+api_key = os.getenv('GOOGLE_API_KEY')
+if not api_key or not validate_api_key(api_key):
+    st.warning("⚠️ No default API key available. Please use your own API key.")
+    api_key = None
+else:
+    try:
+        # Test the default API key
+        genai.configure(api_key=api_key)
+        test_model = genai.GenerativeModel('gemini-pro')
+        test_model.generate_content("test")  # Quick test to verify API key
+    except Exception:
+        st.warning("⚠️ The default trial mode is currently unavailable. Please use your own API key.")
+        api_key = None
+
 # Initialize genai with cleanup
 def cleanup_genai():
     try:
@@ -25,21 +46,6 @@ def cleanup_genai():
 
 # Register cleanup function
 atexit.register(cleanup_genai)
-
-# Get API key and configure Gemini
-api_key = os.getenv('GOOGLE_API_KEY')
-if not api_key:
-    st.error("❌ API key not found. Please set the GOOGLE_API_KEY environment variable.")
-    st.stop()
-
-try:
-    # Test the default API key
-    genai.configure(api_key=api_key)
-    test_model = genai.GenerativeModel('gemini-pro')
-    test_model.generate_content("test")  # Quick test to verify API key
-except Exception as e:
-    st.error(f"❌ Default API key is invalid: {str(e)}")
-    api_key = None  # Invalidate the default API key
 
 # Initialize session state
 if 'response_cache' not in st.session_state:
@@ -97,7 +103,7 @@ def is_rate_limited():
 def get_ai_response(prompt, max_retries=3):
     """Get AI response with better error handling"""
     if is_rate_limited():
-        raise Exception("Please wait a moment before making another request.")
+        raise Exception("💡 Please wait a moment between questions.")
     
     cache_key = get_cache_key(prompt)
 
@@ -107,12 +113,12 @@ def get_ai_response(prompt, max_retries=3):
 
     # Check trial usage if using default API key
     if not st.session_state.user_api_key and not check_trial_usage():
-        raise Exception("Trial limit reached (5 requests). Please enter your own API key to continue using the application.")
+        raise Exception("✋ Trial limit reached! To continue using the app, please add your API key in the sidebar.")
 
     # Use the correct API key
     current_api_key = st.session_state.user_api_key or api_key
     if not current_api_key:
-        raise Exception("No valid API key found. Please enter your API key to continue.")
+        raise Exception("🔑 Please enter your API key in the sidebar to start using the app.")
 
     try:
         # Configure API key and create a new model instance for this request
@@ -134,22 +140,22 @@ def get_ai_response(prompt, max_retries=3):
     except Exception as e:
         error_msg = str(e).lower()
         if "invalid" in error_msg and "api key" in error_msg:
-            if current_api_key == api_key:  # If using default API key
-                raise Exception("⚠️ Default API key is invalid. Please enter your own API key in the sidebar.")
-            else:  # If using user's API key
+            if current_api_key == api_key:
+                raise Exception("⚠️ The trial mode is currently unavailable. Please use your own API key.")
+            else:
                 st.session_state.user_api_key = None
-                raise Exception("⚠️ Invalid API key. Please enter a valid API key in the sidebar.")
+                raise Exception("❌ The API key you entered isn't working. Please check and try again.")
         elif "resource_exhausted" in error_msg or "rate limit" in error_msg:
             wait_time = "a few minutes"
             if "about an hour" in error_msg:
                 wait_time = "about an hour"
-            raise Exception(f"⚠️ API rate limit reached. Please try again in {wait_time}. Consider using your own API key to avoid rate limits.")
+            raise Exception(f"⏳ Taking a short break! Please try again in {wait_time}.\n💡 Tip: Use your own API key to avoid waiting.")
         elif "invalid_argument" in error_msg:
-            raise Exception("⚠️ The request was invalid. Please try with a shorter text or different question.")
+            raise Exception("📝 Your question might be too long. Try asking a shorter question.")
         elif "permission_denied" in error_msg:
-            raise Exception("⚠️ Permission denied. Please check your API key and try again.")
+            raise Exception("🔒 Access denied. Please check if your API key is valid.")
         else:
-            raise Exception(f"⚠️ An error occurred: {str(e)}")
+            raise Exception("❌ Oops! Something went wrong. Please try again in a moment.")
 
 def extract_text_from_pdf(pdf_file):
     pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -284,37 +290,41 @@ def main():
 
     # Add API key input field in sidebar
     with st.sidebar:
-        st.markdown("### API Key Settings")
-        user_api_key = st.text_input("Enter your API key (optional)", type="password")
+        st.markdown("### 🔑 API Key Settings")
+        user_api_key = st.text_input("Enter your API key", type="password", 
+                                    help="Get your API key from Google AI Studio")
         
         # Show current trial count
         remaining_requests = get_remaining_trial_requests()
-        st.markdown(f"Trial requests remaining: **{remaining_requests}**")
+        if remaining_requests > 0:
+            st.markdown(f"🎁 Trial requests remaining: **{remaining_requests}**")
         
         if user_api_key:
-            try:
-                genai.configure(api_key=user_api_key)
-                model.generate_content("test")
+            if validate_api_key(user_api_key):
                 st.session_state.user_api_key = user_api_key
-                st.success("API key validated successfully ✓")
-            except Exception as e:
-                st.error("❌ Invalid API key. Please check and try again.")
+                st.success("✨ API key format looks good!")
+            else:
+                st.error("❌ Invalid API key format. Please check and try again.")
                 st.session_state.user_api_key = None
         
         # Show trial usage warning
         if not st.session_state.user_api_key:
-            st.markdown("*You can make 5 requests with our API key. After that, please use your own API key.*")
+            if api_key:
+                st.markdown("ℹ️ *You can make 5 free requests. After that, you'll need your own API key.*")
+            else:
+                st.info("🔑 You'll need an API key to use this app.")
+            
             if remaining_requests <= 0:
-                st.error("⚠️ Trial limit reached. Please enter your API key above to continue.")
+                st.warning("✋ Trial limit reached!")
                 st.markdown("""
-                To get your own API key:
-                1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
-                2. Create a new API key
-                3. Enter it above to continue using the application
+                **Get your free API key:**
+                1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+                2. Click "Create API Key"
+                3. Copy and paste it above
                 """)
         else:
-            st.success("Using your API key ✓")
-
+            st.success("🚀 Using your API key")
+            
     # Store PDF text in session state
     if 'pdf_text' not in st.session_state:
         st.session_state.pdf_text = None
