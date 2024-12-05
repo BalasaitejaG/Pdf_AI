@@ -17,20 +17,30 @@ st.set_page_config(page_title="PDF Question & Answer", layout="wide")
 load_dotenv()
 
 # Database setup
-DATA_DIR = Path("/Users/balasaiteja/Documents/Developer/Projects/Pdf_AI/data")
+DATA_DIR = Path(__file__).parent / "data"  # Use relative path
 DB_PATH = DATA_DIR / "usage.db"
 
 def init_database():
     """Initialize the SQLite database"""
-    DATA_DIR.mkdir(exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS user_usage
-                 (user_id TEXT PRIMARY KEY,
-                  request_count INTEGER DEFAULT 0,
-                  first_request TIMESTAMP)''')
-    conn.commit()
-    conn.close()
+    try:
+        # Create data directory if it doesn't exist
+        DATA_DIR.mkdir(exist_ok=True)
+        
+        # Use memory database if we can't write to disk
+        db_path = ":memory:" if not os.access(DATA_DIR, os.W_OK) else DB_PATH
+        
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS user_usage
+                    (user_id TEXT PRIMARY KEY,
+                     request_count INTEGER DEFAULT 0,
+                     first_request TIMESTAMP)''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        st.warning("⚠️ Running in demo mode - trial usage won't persist between sessions")
+        global DB_PATH
+        DB_PATH = ":memory:"  # Fall back to in-memory database
 
 # Initialize database on startup
 init_database()
@@ -82,7 +92,7 @@ def check_trial_usage():
         return True
         
     user_id = get_user_identifier()
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     c = conn.cursor()
     
     c.execute("SELECT request_count FROM user_usage WHERE user_id = ?", (user_id,))
@@ -101,7 +111,7 @@ def increment_trial_usage():
     """Increment the trial usage count for the current user"""
     if not st.session_state.user_api_key:  # Only track if using trial
         user_id = get_user_identifier()
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         c = conn.cursor()
         
         c.execute("""INSERT INTO user_usage (user_id, request_count, first_request)
@@ -119,7 +129,7 @@ def get_remaining_trial_requests():
         return 0
         
     user_id = get_user_identifier()
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection()
     c = conn.cursor()
     
     c.execute("SELECT request_count FROM user_usage WHERE user_id = ?", (user_id,))
@@ -176,6 +186,13 @@ def extract_text_from_pdf(pdf_file):
     for page in pdf_reader.pages:
         text += page.extract_text() + "\n"
     return text
+
+def get_db_connection():
+    """Get a database connection"""
+    try:
+        return sqlite3.connect(DB_PATH if DB_PATH != ":memory:" else ":memory:")
+    except Exception:
+        return sqlite3.connect(":memory:")
 
 def main():
     # Update the styling section
