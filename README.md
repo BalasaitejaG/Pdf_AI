@@ -1,42 +1,15 @@
-# PDF Question & Answer Assistant
+# PDF AI Assistant 📚
 
-An intelligent PDF document analysis tool that allows you to ask questions about your PDF documents and get AI-powered answers.
+An intelligent PDF document analysis tool powered by Google's Gemini AI that allows you to ask questions about your PDF documents and get AI-powered answers.
 
-## Features
+## Features 🌟
 
-- PDF Document Upload
-- Natural Language Question Answering
-- AI-Powered Analysis
-- Smart Content Search
+- 📄 PDF Document Upload & Analysis
+- 🤖 AI-Powered Question Answering
+- 🎁 5 Free Trial Questions
+- 🔒 Secure API Key Management
+- 🌙 Dark Mode Interface
 
-## Setup
+## Setup 🚀
 
-1. Clone the repository
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Configure environment:
-   - Create a `.env` file in the project root
-   - Add your API key in the following format:
-```
-GOOGLE_API_KEY=your_api_key
-```
-
-## Usage
-
-1. Start the application:
-```bash
-streamlit run app.py
-```
-
-2. Open the provided URL in your browser
-3. Upload a PDF document
-4. Ask questions about the document content
-
-## Requirements
-
-- Python 3.9+
-- Required packages listed in `requirements.txt`
-- Valid API key for the AI service
+1. Clone the repository:
