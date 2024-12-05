@@ -27,6 +27,8 @@ api_key = os.getenv('GOOGLE_API_KEY')
 if not api_key or not validate_api_key(api_key):
     st.warning("⚠️ No default API key available. Please use your own API key.")
     api_key = None
+    # Set trial count to 0
+    st.session_state.trial_count = 5  # This will show 0 remaining trials
 else:
     try:
         # Test the default API key
@@ -36,6 +38,8 @@ else:
     except Exception:
         st.warning("⚠️ The default trial mode is currently unavailable. Please use your own API key.")
         api_key = None
+        # Set trial count to 0
+        st.session_state.trial_count = 5  # This will show 0 remaining trials
 
 # Initialize genai with cleanup
 def cleanup_genai():
