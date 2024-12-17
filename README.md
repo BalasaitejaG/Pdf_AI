@@ -58,8 +58,9 @@ A powerful PDF Question & Answer application that combines the capabilities of G
    # Copy example environment file
    cp .env.example .env
 
-   # Edit .env with your settings
-   # Required for full access:
+   # Add your Google Gemini API key to the .env file
+   # Create a .env file in the root directory of the project if it doesn't exist.
+   # Add the following line to the .env file, replacing "your_gemini_api_key_here" with your actual API key:
    # GOOGLE_API_KEY=your_gemini_api_key_here
    ```
 
